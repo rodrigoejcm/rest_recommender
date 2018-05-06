@@ -1,0 +1,1097 @@
+---
+title: "Data Mining II - Practical Assignment: Restaurant Recommendation"
+author: "Ariadne Fernandes, Guilherme Cardoso, Rodrigo Barros"
+output:
+  html_document: 
+    fig_caption: yes
+    number_sections: yes
+    theme: cerulean
+    toc: yes
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+# Project Description
+
+The aim of this practical assignment is to compare the performance of different recommendation strategies on a data set obtained from ChefMoz, a recommender system prototype for the recommendation of restaurants. This system is currently inactive and in order to allow the study and development of different recommender systems, part of its restaurant and consumer data has been
+uploaded to UCI repository and it was downloaded to be the explored dataset. The task is to generate a top N list of restaurants
+according to the consumer preferences.
+
+# Project Setup  
+
+## Software and Tools
+
+All the data was imported, preprocessed and analysed on R Studio, elaborating next a rMarkdown file to create the report. 
+
+## Libraries Import  
+
+Packages as "dplyr", "plyr" , "tidyr" and "tibble" were used to manipulate the data and packages as "ggplot", "ggmap, "grid", "ggdendro" and "gridExtra" were used to generate and layout the display of plots.
+
+```{r, message=FALSE, warning=FALSE}
+
+library(ggplot2)
+library(lubridate)
+library(dplyr)
+library(plyr)
+library(Hmisc)
+library(tidyr)
+library(purrr)
+library(ggdendro)
+library(ggmap)
+library("recommenderlab")
+library(tibble)
+library(gridExtra)
+library(grid)
+
+set.seed(2016)
+
+```
+
+## Data Import
+
+```{r, echo=FALSE, warning=FALSE}
+
+##Defines project path
+project_path <- "C:/Users/ariad/Desktop/Trabalhos/DMII/"
+project_path <- "/home/rodrigo/Projetos/DM2/v2/"
+
+```
+
+```{r, warning=FALSE, }
+
+## Restaurant Data Import
+
+chefmozaccepts <- read.csv(paste(project_path,"RCdata/chefmozaccepts.csv",sep=""))
+chefmozcuisine <- read.csv(paste(project_path,"RCdata/chefmozcuisine.csv",sep=""))
+chefmozhours4 <- read.csv(paste(project_path,"RCdata/chefmozhours4.csv",sep=""))
+chefmozparking <- read.csv(paste(project_path,"RCdata/chefmozparking.csv",sep=""))
+geoplaces2 <- read.csv(paste(project_path,"RCdata/geoplaces2.csv",sep=""))
+
+## User Data Import
+
+userprofile <- read.csv(paste(project_path,"RCdata/userprofile.csv",sep=""))
+usercuisine = read.csv(paste(project_path,"RCdata/usercuisine.csv",sep=""))
+userRat = read.csv(paste(project_path,"RCdata/rating_final.csv",sep=""))
+userpayment = read.csv(paste(project_path,"RCdata/userpayment.csv",sep=""))
+
+```
+ 
+
+
+# Preliminary Exploratory Data Analysis of the Available Data.
+
+The analysis was made in all CSV files, that contains information about the users profiles, the rating given by then and also the restaurants categories and characteristics, using the aid of plotting to better visualize the data and the context of the problem.
+
+
+## Restaurants DATA
+
+### chefmozaccepts.csv
+
+#### Main information
+This datset presented 1314 instaces with 2 attribustes: placeID and Rpayment. The Rpayment variable presents the paying methods accepted by each restaurants. 
+
+When analyzing the chefmozaccepts.csv file, it was possible to see that the "visa" way of payment was registered in two ways: "VISA" and "visa", so it was necessary to combine them to represent the same data. 
+
+```{r, warning=FALSE}
+chefmozaccepts$Rpayment[chefmozaccepts$Rpayment == 'Visa'] <- "VISA"
+```
+
+
+```{r, echo=FALSE}
+
+# creates new factor
+test_credit_card <- chefmozaccepts
+levels(test_credit_card$Rpayment) <- c(levels(test_credit_card$Rpayment),"Credit Card")
+
+cc <- c("American_Express","Carte_Blanche", "Diners_Club", "Discover", 
+        "Japan_Credit_Bureau", "MasterCard-Eurocard", "VISA", "Visa" )
+
+#Group method of payment as Creadit Card
+test_credit_card$Rpayment[test_credit_card$Rpayment %in% cc] <- "Credit Card"
+
+# Remove duplicates
+test_credit_card <- test_credit_card[!duplicated(test_credit_card),]
+
+```
+
+```{r, warning=FALSE} 
+g2 <- ggplot(chefmozaccepts, aes(Rpayment))+geom_histogram( stat="count") + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(title="Restaurants x Payment Methods")
+
+g1 <- ggplot( test_credit_card , aes(Rpayment))+geom_histogram( stat="count") + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(title="Restaurants x Grouped Payment Methods")
+
+```
+
+```{r, warning=FALSE} 
+grid.arrange(g2, g1, ncol = 2)
+```
+
+#### Overview
+
+- Besides Cash is the most accepted payment method, not all places accept it. 
+- Between all credit cards options, the most accepted are Visa and Master. The least accepted cards are JCB and Carte Blanche. 
+
+After grouping all credit-cards:
+
+- Cash is still the most accepted payment method
+- Credit-card is the seconnd followed by Debit cards
+- The least accepted are gift vouchers and checks
+
+
+### chefmozcuisine.csv
+
+#### Main information
+
+The dataset presented 916 instances with two attributes: placeID and Rcuisine. The Rcuisine variable described the types of cuisine of each restaurant. When analyzing the chefmozcuisine.csv file, it was possible to see how all the restaurantes were categorized, and that there were 59 types of restaurants.
+
+
+```{r, warning=FALSE, echo=FALSE}
+ggplot( chefmozcuisine , aes(Rcuisine))+geom_histogram( stat="count") + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(title="Restaurants x Type of Cuisine")
+```
+
+
+#### Overview
+
+- Most of the restaurants are Mexican cuisine ( considering that the dataset is from mexico restaurants, it makes sense)
+- Followed by International cuisine, dutch-bengian ,American and italian
+- The least present cuisine are : Afghan, Bagels, Brazilian, California, Caribbean ,Ethiopian, Fine_Dining, Korean, Mongolian ,Organic-Healthy Persian, Soup, Southern, Thai, Turkish , with 1 appearence on the dataset
+- Some types of restaurantes could be united in one category, like hotdogs and burguers being ast food, but not all restaurants of this type are also classified as fast food, as it's shown in the following analysis.
+
+
+```{r, echo=FALSE}
+
+#here we are trying to understand if we can group some types of cuisines
+
+bg <-chefmozcuisine$placeID[chefmozcuisine$Rcuisine == 'Burgers']
+hd <- chefmozcuisine$placeID[chefmozcuisine$Rcuisine == 'Hot_Dogs']
+
+dfbg <- chefmozcuisine[chefmozcuisine$placeID %in% bg, ] ## NOT ALL BURGERS ARE ALSO FAST-FOOD
+dfhd <- chefmozcuisine[chefmozcuisine$placeID %in% hd, ] ## NOT ALL HOT DOGS ARE ALSO FAST-FOOD
+
+#EXAMPLES
+dfbg[dfbg$placeID %in% c(134976,132235), ]
+dfhd[dfhd$placeID %in% c(132962), ]
+# :(
+
+```
+
+
+### chefmozhours4.csv
+
+#### Main information
+
+The dataset presented 2339 instances with three attributes: placeID, hours and days. The hours and days variables describe the days, opening and closing hours for each restaurant. When analyzing the chefmozhours4.csv file, it was possible to see the working hours range of the restaurants, considering week days and weekends. There were also some duplicated data, that was disconsidered. 
+
+
+```{r, echo=FALSE, warning=FALSE}
+chefmozhours4 <- chefmozhours4[!duplicated(chefmozhours4),]
+rownames(chefmozhours4) <- seq(length=nrow(chefmozhours4))## reseting index
+
+
+ggplot( chefmozhours4 , aes(days))+geom_histogram( stat="count") + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(title="Restaurants x Open Days")
+```
+
+#### Overview
+
+-  most of the restaurants are open on Mon;Tue;Wed;Thu;Fri; followed by Sat and Sun
+
+```{r, echo=FALSE}
+summary(chefmozhours4$days)
+```
+
+Some tests were made trying to improve the information visualization.
+
+```{r, warning=FALSE, echo=FALSE}
+# test creating new column open and close
+teste <-  mutate(chefmozhours4, Open_at = substr(chefmozhours4$hours,1, 5))
+teste <-  mutate(teste, Close_at = substr(hours,nchar(as.character(hours))-5, nchar(as.character(hours))-1))
+```
+
+```{r, warning=FALSE}
+
+g1 <- ggplot( teste , aes(Open_at))+geom_histogram( stat="count") + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(title="Restaurants Open Time")
+
+
+g2 <- ggplot( teste , aes(Close_at))+geom_histogram( stat="count") + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(title="Restaurants Close Time")
+
+```
+
+```{r, warning=FALSE, echo=FALSE}
+grid.arrange(g1,g2, ncol=2)
+```
+
+
+#### Overview 
+
+- Most of the restaurantes open for lunch
+- Most restaurants open at 00:00. this seams like an error for the dataset 
+- Most of the restaurantes close between 23:30 and 00:00 and that seams reasanable
+- These new columns are not reliable based on the formation strategy and data. Time slots are overlaping
+
+
+### chefmozparking.csv
+
+#### Main information
+
+This dataset presented 702 instances with 2 attributes: placeID and parking_lot. When analyzing the the dataset, it was possible to see if the restaurants have any parking space and if so, what kind it is. 
+
+
+```{r, warning=FALSE}
+
+ggplot( chefmozparking , aes(parking_lot))+geom_histogram( stat="count") + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(title="Restaurants Parking Availability")
+```
+  
+#### Overview
+
+- It seams that most of the restaurants dont have a parking space
+- There is an "yes" in the dataset that is not clear if this means a private parking.
+- if you consider that most of the "yes" does not present other type of parking, this probably means a private parking (as shown below)
+
+```{r}
+yes <-chefmozparking$placeID[chefmozparking$parking_lot =="yes"]
+count(chefmozparking[chefmozparking$placeID %in% yes,], 'parking_lot')
+```
+
+- After analyzing, 174 (25%) restaurants have private parking
+
+### geoplaces.csv
+
+#### Main information
+
+When analyzing the chefmozparking.csv file, it was possible to see the location of the restaurants registered in the dataset and also he main characteristics, like price, dress code, if there was smoking area, alcohol, open area, and some more features. All the attributes that have some missing values weren't considered in the analysis because they weren't primordial attributes. 
+
+
+```{r, warning=FALSE}
+
+g1 <- ggplot( geoplaces2 , aes(smoking_area))+geom_histogram( stat="count") + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+g2 <- ggplot( geoplaces2 , aes(alcohol))+geom_histogram( stat="count") + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+g3 <- ggplot( geoplaces2 , aes(dress_code))+geom_histogram( stat="count") + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+g4 <- ggplot( geoplaces2 , aes(accessibility))+geom_histogram( stat="count") + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+g5 <- ggplot( geoplaces2 , aes(area))+geom_histogram( stat="count") + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+g6 <- ggplot( geoplaces2 , aes(price))+geom_histogram( stat="count") + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+```{r, warning=FALSE, echo=FALSE}
+grid.arrange(g1, g2, g3, g4, g5, g6, ncol = 3)
+```
+  
+
+#### Overview 
+
+- Most of restaurants do not permit smoking or have a separated area for smoking
+- The value "none" can be a missing value for the variable
+- The majority of restaurants do not serve alcohol
+- The majority of restaurants have informal dress code
+- The majority of restaurants don't have accessibility
+- The majority of restaurants have a closed area
+
+It was also checked the location of the restaurants by the latitude and longitude information, and most of them are located in Mexico. That explains why most of rated restaurants are of mexican food.
+
+```{r eval=FALSE, echo=FALSE}
+
+mxmap1 <-  get_map(location = c(-99.222200,18.922450), zoom = 11)
+mxmap2 <-  get_map(location = c(-100.754988, 21.135935), zoom = 4)
+
+```
+
+```{r eval=FALSE,echo=FALSE}
+saveRDS(mxmap1, "map1.rds")
+saveRDS(mxmap2, "map2.rds")
+```
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+
+mxmap1 <- readRDS(paste(project_path,"map1.rds",sep = ""))
+mxmap2 <- readRDS(paste(project_path,"map2.rds",sep = ""))
+
+```
+
+```{r, warning=FALSE}
+g1 <- ggmap(mxmap2) + 
+      geom_point(aes(x = geoplaces2$longitud, y = geoplaces2$latitude, size = 1), data = geoplaces2, alpha = .5) +
+      labs(title="Restaurant Location")
+
+g2 <- ggmap(mxmap1) + 
+      geom_point(aes(x = geoplaces2$longitud, y = geoplaces2$latitude, size = 1), data = geoplaces2, alpha = .5) +
+      labs(title="Restaurant Location + - Zoom in")
+
+```
+
+```{r, echo=FALSE}
+grid.arrange(g1,g2,ncol=2 )
+```
+
+
+## Users DATA
+
+### userprofile.csv
+
+#### Main information
+
+When analyzing the userprofile.csv file, it was possible to see many characteristics of the user, as religion, color, age, drink level, dress code preference, budget, and many others features.
+
+
+```{r, warning=FALSE}
+
+g1 <- ggplot( userprofile , aes(drink_level))+geom_histogram( stat="count") + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+g2 <- ggplot( userprofile , aes(marital_status))+geom_histogram( stat="count") + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+g3 <- ggplot( userprofile , aes(religion))+geom_histogram( stat="count") + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+g4 <- ggplot( userprofile , aes(personality))+geom_histogram( stat="count") + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+g5 <- ggplot( userprofile , aes(smoker))+geom_histogram( stat="count") + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+g6 <- ggplot( userprofile , aes(x="User",y=weight))+geom_boxplot() + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+g7 <- ggplot( userprofile , aes(dress_preference))+geom_histogram( stat="count") + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+g8 <- ggplot( userprofile , aes(activity))+geom_histogram( stat="count") + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+g9 <- ggplot( userprofile , aes(budget))+geom_histogram( stat="count") + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+```{r, warning=FALSE, echo=FALSE}
+grid.arrange(g1, g2, g3, g4, g5 ,g6 ,g7, g8, g9, ncol = 3)
+```
+
+#### Overview 
+
+- The majority of users don't smoke
+- The majority of users are single
+- The majority of users are hard-worker
+- The majority of users are catholic
+- The majority of users have a medium budget
+- The majority of users have no preference of dress code
+
+
+### usercuisine.csv
+
+#### Main information
+
+This dataset provided 330 instances over 2 attributes: placeID and Rcuisine. It was possible to see users preferences over types of cuisines.
+
+
+```{r , warning=FALSE}
+ggplot( usercuisine , aes(Rcuisine))+geom_histogram( stat="count") + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(title="User Cuisine Preference")
+```
+
+#### Overview 
+
+- It was clear that the most apreciated type of cuisine ismexican, and that was previous stated when the analysis of the geolocation was made and it was noticed that most of the restaurants where in fact located in Mexico. 
+
+### userpayment.csv 
+
+#### Main information
+
+The dataset presented 177 instances over userID and Upayment attribute. 
+it was possible to see what method of payment most of users preffer to use.  
+
+```{r , warning=FALSE}
+ggplot( userpayment , aes(Upayment))+geom_histogram( stat="count") + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(title="Payment Methods Distribution")
+  
+```
+
+#### Overview 
+
+- Most of users preffer paying with cash, followed by bank debit cards and visa. 
+
+
+## Ratings DATA
+
+### rating_final.csv 
+
+#### Main information
+
+When analyzing the rating_final.csv file, it was possible to see the rating given by wach user regarding the service, the food and an overall rating. It was also possible to observe the most common number of ratings given by user.
+
+```{r, echo=FALSE}
+
+## Count
+user_ratings_count <- userRat %>%  group_by(userID) %>% dplyr::summarise(total=n())
+
+```
+
+```{r, warning=FALSE}
+
+g1 <- ggplot( user_ratings_count , aes(y=total, x="user ratings"))+geom_boxplot() + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+
+  labs(title="User Rating Boxplot")
+
+g2 <- ggplot( user_ratings_count , aes(total))+geom_histogram( stat="count") + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(title="User Rating Distribution")
+```
+
+```{r, echo=FALSE}
+grid.arrange(g2,g1,ncol=2)
+```
+
+
+#### Overview 
+
+- Most of users gave beetween 09 and 11 ratings for restaurantes. 
+- Just a few users registered more than 15 avaliations of restaurants. 
+
+### User Profile
+
+To make an embracing analysis, it was created a dendrogram (from Greek dendro "tree" and gramma "drawing"), that is a tree diagram, frequently used to illustrate the arrangement of the clusters produced by hierarchical clustering. 
+
+
+```{r, warning=FALSE}
+um <- dist(userprofile)
+uc <- hclust(um)
+dhc <- as.dendrogram(uc)
+ddata <- dendro_data(dhc)
+
+
+ggplot(segment(ddata)) + 
+  geom_segment(aes(x = x, y = y, xend = xend, yend = yend)) + 
+  coord_flip() +
+  theme_dendro() +
+  geom_text(data = ddata$labels, 
+           aes(x = x, y = y, label = label), 
+           size = 2, hjust = 2,  position = position_dodge(width = 1)) 
+
+```
+
+### Identifying similar users by profile
+
+It was created a function that can define, comparing the profiles, which are the similar users related to a chosen one and it was tested to give the six similar users of user "U1044". If we would not use the "recommender lab" package, we could use this function to identify simmilar users and create recommendations.
+
+```{r}
+similar_users_by_profile <- function(uID,n){
+  ui <- rownames(userprofile[userprofile$userID == uID ,])
+  um <- as.matrix(dist(userprofile))
+  user_index <- tail(head(order(um[ui,]),n+1),-1)
+  as.array(userprofile$userID[user_index])
+}
+```
+
+```{r}
+similar_users_by_profile('U1044',6)
+```
+
+
+### Simmilar users by user preferences ( cuisines )
+
+It was created a cluster that can define, comparing the cusine preferences, which are the similar users. 
+
+
+```{r}
+user_cuisine_prefs <- table(usercuisine$userID,usercuisine$Rcuisine)
+
+um <- dist(user_cuisine_prefs)
+uc <- hclust(um)
+
+plot(uc)
+
+```
+
+
+
+# User Recommendation
+
+After presenting an overview of the data set, we will start to experiment different recommendation models and evaluate the results. The aim is to Use binary and non-binary information on the users' rating of restaurants to learn recommender systems and then recommend top N restaurants for a given user by: 
+- Collaborative Filtering;
+- Popularity;
+- Association Rules;
+
+## Ratings Decisions
+
+The group discussed on different ways we could format the ratings dataset as there are 3 types os ratings. These are the proposet data transformation for model creation:
+
+- Create a model based on the sumation of the 3 types of ratings (rating + food_rating + service_rating):
+
+```{r}
+userRat_OP1 <- userRat %>% 
+                 mutate(final_rating = rating + food_rating + service_rating ) %>% 
+                 select(userID, placeID, final_rating)
+```  
+
+- Create a model for each of the ratings and join the results ( as seen in CF Model)
+
+- Create different combinations of the ratings ( as seen in Popular Recommneder Model)
+
+
+##Collaborative Filtering
+
+In a general sense, collaborative filtering is the process of filtering for information or patterns using techniques involving collaboration among multiple agents, viewpoints and data sources.
+
+### Preparing the data set "rating_final.csv"
+
+Here we have a few choices to reduce the three ratings into one:
+- OPTION 1 - we can create the model combining all ratings in one ( as descibed above ).
+- OPTION 2 - we can create 3 models, one for each rating and then try to combine the results ( as descibed above ).
+
+### Option 1
+
+The model creation
+
+```{r} 
+
+## creates the model
+rmat_OP1 <- as(userRat_OP1, "realRatingMatrix")
+model_OP1 <- Recommender(rmat_OP1, "UBCF", parameter = list(nn = 10, method = "cosine",normalize = NULL))
+
+
+##recomending function
+  recomment_place <- function(uID, n){
+    p <- predict(model_OP1, rmat_OP1[uID,], n = n)
+    #print( paste("RECOMENDER OPTION 1 - USER: ", uID) )
+    as(p, "list")  
+}
+```
+
+### Option 2 
+
+Three diffent models creation
+
+```{r}
+
+# Model for Rating
+userRat_OP2_rating <- userRat %>% select(userID, placeID, rating)
+rmat_OP2_1 <- as(userRat_OP2_rating, "realRatingMatrix")
+model_OP2_1 <- Recommender(rmat_OP2_1, "UBCF", parameter = list(nn = 10, method = "cosine",normalize = NULL))
+  
+# Model for Service Rating
+userRat_OP2_service_rating <- userRat %>% select(userID, placeID, service_rating)
+rmat_OP2_2 <- as(userRat_OP2_service_rating, "realRatingMatrix")
+model_OP2_2 <- Recommender(rmat_OP2_2, "UBCF", parameter = list(nn = 10, method = "cosine",normalize = NULL))
+  
+# Model for Food Rating
+userRat_OP2_food_rating <- userRat %>% select(userID, placeID, food_rating)
+rmat_OP2_3 <- as(userRat_OP2_food_rating, "realRatingMatrix")
+model_OP2_3 <- Recommender(rmat_OP2_3, "UBCF", parameter = list(nn = 10, method = "cosine",normalize = NULL))
+  
+models_and_matrix <- list(c(model_OP2_1,rmat_OP2_1),c(model_OP2_2,rmat_OP2_2),c(model_OP2_3,rmat_OP2_3))
+```  
+
+After transforming the data to be better used, the recomender function was implemented and a model of recommendation was created.
+
+```{r}  
+# Recommendation Function
+recomment_place_op2 <- function(model,uID, n,rm){
+  p <- predict(model, rm[uID,], type="ratings")
+  t <-as(p, "list")
+  return(t)
+  }
+  
+# Recommendation Agregate Function  
+recomment_place_op2_final <-function(uID,n){
+ 
+    total <- as.data.frame(c("")) #EMPTY DF
+    i <- 0
+
+    for(mm in models_and_matrix){
+        m <-mm[[1]]
+        rm <- mm[[2]]
+        np <- as.data.frame(recomment_place_op2(m,uID,5,rm))
+        colnames(np) <- c(paste("model_",i,sep = ""))
+        total <- cbind(total,np)
+        i <- i +1
+    }
+    
+    #Recomending
+    
+    final <-  total %>%  
+              mutate(models_rating = model_0 + model_1 + model_2 ) %>% 
+              rownames_to_column() %>%  select(rowname,models_rating) %>% 
+              arrange(desc(models_rating)) 
+    #print( paste("RECOMENDER OPTION 2 - USER: ", uID) )
+    return(head(final$rowname,n))
+    
+}
+```
+
+Testing for users "U1137" and "U1138" using the two options and for the number of simmilar users as n=5. 
+
+```{r}
+
+recomment_place('U1137', 5)
+recomment_place('U1138', 5)
+  
+recomment_place_op2_final('U1137', 5)
+recomment_place_op2_final('U1138', 5)
+
+```
+
+As imagined, the two models presented different outputs recommending different restaurants at each of the approachs.
+
+
+## Popular
+
+As the Popular Recommendation dosn't take into account the user, but the number of ratings or the highest ratings, we tryed a mannual approach in order to compare to the "recommenderlab" package.
+
+```{r}
+
+total_user <- length(unique(userRat$userID))
+
+teste <- userRat %>%  group_by(placeID) %>%
+  dplyr::summarise (count_ratings_rest = n(),
+                    mean_rat = mean(rating),
+                    median_rat = mean(rating),
+                    norm_rat = mean(rating)* (n()/total_user),
+                    norm_food = mean(food_rating)* (n()/total_user),
+                    norm_serv = mean(service_rating)* (n()/total_user),
+                    total_median = mean(service_rating+rating+food_rating),
+                    total_sum_norm = norm_rat + norm_food +norm_serv,
+                    total_sum_mean = mean(rating) + mean(food_rating) + mean(service_rating),
+                    total_sum_med = median(rating) + median(food_rating) + median(service_rating)) 
+```
+
+
+A few metrics were created in order to better classify the restaurants. The summation of the three ratings mean and median, a summation of a normalized mean witch takes into account the total number of ratings on the dataset, and jaust the mean and median of the rating variable. Later we intend to compare these approachs with the Popular method on the "recommender lab" package.
+
+Here is the function we can use to find the top N restaurants based on these differen metrics.
+
+
+```{r}
+top_restaurants <- function(x){
+  
+  print(paste("Top",x, "restaurants"))
+  
+  print("Total Normalized")
+  print(as(head(arrange(teste,desc(total_sum_norm)), n = x) %>% select(placeID),"list")[[1]])
+  
+  print("Total Sum of Mean")
+  print(as(head(arrange(teste,desc(total_sum_mean)), n = x)%>% select(placeID),"list")[[1]])
+  
+  print("Total Sum of Median")
+  print(as(head(arrange(teste,desc(total_sum_med)), n = x)%>% select(placeID), "list")[[1]])
+  
+  print("Sum of the ratings Median")
+  print(as(head(arrange(teste,desc(total_median)), n = x)%>% select(placeID), "list")[[1]])  
+  
+  print("Ratings Mean")
+  print(as(head(arrange(teste,desc(mean_rat)), n = x)%>% select(placeID), "list")[[1]])
+  
+  print("Ratings Median")
+  print(as(head(arrange(teste,desc(median_rat)), n = x)%>% select(placeID), "list")[[1]])  
+
+  #"Top Restaurants by Total Normalized, Total Mean, Total Median, Median of sum of ratings,  Ratings Mean and Ratings Median")
+  
+}
+
+top_restaurants(8)
+
+```
+
+
+## Popularity (Using Recommender Lab Package) 
+
+It was chosen to combine all ratings in one to evaluate the ratings and recommend the restaurants. After that, it was created the model. 
+
+```{r}
+
+## creating the rating matrix
+mr <- as(userRat_OP1, "realRatingMatrix")
+
+```
+
+###Normalizing the Rating and Visualizing It
+
+After applying the normalize function it was possible to plot the original rating distribution and the normalized one. 
+
+```{r}
+
+#An important operation for rating matrices is to normalize the entries to, e.g., 
+#centering to remove rating bias by subtracting the row mean from all ratings in the row.
+
+r_m <- normalize(mr)
+
+g1 <- image(mr, main = "Raw Ratings")
+g2 <- image(r_m, main = "Normalized Ratings")
+  
+```
+
+```{r, echo=FALSE}
+grid.arrange(g1,g2,ncol=2)
+```
+
+
+###Creating a Recommendation Method: Popular
+
+The recommender of type 'POPULAR' for 'realRatingMatrix' that was used here learned using the first 100 users.The model can be obtained from a recommender using getModel().
+
+The testing was made for users "U1137" and "U1138".
+
+
+We create a recommender which generates recommendations solely on the popularity of items:
+```{r}
+tr <- Recommender(mr[1:100], method = "POPULAR")
+getModel(tr)$topN
+```
+
+Recommendations are generated by predict() and the result contains two ordered top-5 recommendation lists, one for each user. The recommended items can be inspected as a list.
+```{r}
+recom <- predict(tr, mr[137:138], n=5)
+as(recom, "list")
+```
+
+As oposed as previously though, the POPULAR method takes into account the user. because, if not, the recommendations would be equal for all users.
+
+Since the top-N lists are ordered, we can extract sublists, in this case, of the best items in the top-5. For example, we can get the best 3 recommendations for each list using bestN().
+
+```{r}
+recom3 <- bestN(recom, n = 3)
+as(recom3, "list")
+```
+
+
+
+###Predicting the Rating
+
+Another approach when using the recommender lab package is to use The following metod, that  could predict the rating that would be given by a user for a restaurant which wasn't rated by him before. The testing was made for users "U1137" and "U1138".  
+
+```{r}
+recom5 <- predict(tr, mr[137:138], type="ratings")
+as(recom5, "matrix")[,1:10]
+```
+
+###The Evaluatin of Recommender Algorithms
+
+Recommenderlab implements several standard evaluation methods for recommender systems. Evaluation starts with creating an evaluation scheme that determines what and how data is used for training and testing. Here we create an evaluation scheme which splits the first 100 users in mr into a training set (90%) and a test set (10%). For the test set 3 restaurants will be given to the recommender algorithm and the other items will be held out for computing the error. 
+
+```{r}
+e <- evaluationScheme(mr[1:100], method="split", train=0.9, given=-1, goodRating=5)
+```
+
+We create two recommenders (user-based and item-based collaborative filtering) using the training data
+
+```{r}
+r1 <- Recommender(getData(e, "train"), "UBCF")
+r2 <- Recommender(getData(e, "train"), "IBCF")
+r3 <- Recommender(getData(e, "train"), "POPULAR")
+```
+
+
+Next, we compute predicted ratings for the known part of the test data (3 items for each user) using the two algorithms.
+```{r}
+p1 <- predict(r1, getData(e, "known"), type="ratings")
+p2 <- predict(r2, getData(e, "known"), type="ratings")
+p3 <- predict(r3, getData(e, "known"), type="ratings")
+
+```
+
+Finally, we can calculate the error between the prediction and the unknown part of the test data.
+```{r}
+error <- rbind(UBCF = calcPredictionAccuracy(p1, getData(e, "unknown")),IBCF = calcPredictionAccuracy(p2, getData(e, "unknown")), popular = calcPredictionAccuracy(p3, getData(e, "unknown")))
+error
+```
+
+In this example user-based collaborative filtering produces a smaller prediction error.
+
+We now are creating a 5-fold cross validation scheme with the the Given-3 protocol,i.e., for the test users all but three randomly selected items are withheld for evaluation. Next we use the created evaluation scheme to evaluate the recommender method popular. We evaluate top-1, top-2 and top-5 recommendation lists, because each user have evaluated just a few number os restaurante.
+
+The result is an object of class EvaluationResult which contains several confusion matrices.
+getConfusionMatrix() will return the confusion matrices for the 5 runs (we used 5-fold cross
+evaluation) as a list. In the following we look at the first element of the list which represents the first of the 5 runs.
+
+```{r}
+scheme <- evaluationScheme(mr[1:100], method="cross", k=5, given=-1, goodRating=5)
+results <- evaluate(scheme, method="POPULAR", type = "topNList",n=c(1,2,5))
+getConfusionMatrix(results)[[1]] 
+```
+
+###Comparing Top-N Recommendations
+
+The comparison of several recommender algorithms is one of the main functions of recommenderlab. For comparison also evaluate() is used. It was also plotted a barplot that shows the root mean square error, the mean square error and the mean average error. 
+
+```{r, message=FALSE}
+scheme <- evaluationScheme(mr[1:100], method="split", train = .9, k=5, given=3, goodRating=5)
+
+algorithms <- list(
+   "random items" = list(name="RANDOM", param=NULL),
+   "popular items" = list(name="POPULAR", param=NULL),
+   "user-based CF" = list(name="UBCF", param=list(nn=5)),
+   "item-based CF" = list(name="IBCF", param=list(k=5))
+)
+
+## run algorithms
+results <- evaluate(scheme, algorithms, type = "topNList", n=c(1, 2, 5))
+
+#plots the comparative graph
+plot(results, annotate=c(1,2,5), legend="bottomright")
+
+
+#Plotting the results shows a barplot with the root mean square error, the mean square error and the mean average error
+results2 <- evaluate(scheme, algorithms, type = "ratings")
+plot(results2, ylim = c(0,20))
+  
+```
+
+
+
+###Using a Binary Data Set
+For comparison we will check how the algorithms compare given less information. We convert the data set into 0-1 data and we use the given-3 scheme.
+
+```{r}
+m_b <- as(userRat_OP1, "binaryRatingMatrix")
+
+scheme_binary <- evaluationScheme(m_b[1:100], method="split", train = .9, k=5, given=-1)
+
+results_binary <- evaluate(scheme_binary, algorithms, type = "topNList", n=c(1,2,5))
+
+plot(results_binary, annotate=c(1,3), legend="topright")
+
+```
+
+
+## Association Rules
+
+Association rules are used when identifying patterns in a "basket data", with transactions that possibly consist of multiple items. In this case, the basket has the restaurants that were rated for each user. It aims to find rules that will predict the occurrence
+of an item, based on other items in "user's shopping baskets".
+
+It was chosen to combine all ratings in one to evaluate the ratings and recommend the re#staurants. 
+
+```{r}
+mb <- as(userRat_OP1, "binaryRatingMatrix")
+dat <- table(userRat_OP1$userID, userRat_OP1$placeID)
+image(mb)
+
+```
+
+### Creating the Model
+
+After the data set was ready, it was created a binary rating matrix and then the model was developed bases on the association rules.
+
+```{r}
+modelAR <- Recommender(mb, "AR", parameter = list(sup = 0.05, conf = 0.7 ))
+rules <- getModel(modelAR)$rule_base
+inspect(rules)
+```
+
+It was deployed the recommendation model for the user U1138, which has rated the restaurantes \132921" , \132922" and \132925". And then it was predicted the TOP-5 recommended for this user. 
+
+```{r}
+
+rest <- colnames(mb)
+
+c_user <- matrix(0, 1, ncol(dat), dimnames = list(userID = "U1138", restaurant = rest))
+c_user[1, c("132921", "132922", "132925")] <- 1 
+
+aumb <- as(c_user, "binaryRatingMatrix")
+modelPOP <- Recommender(mb, "POPULAR")
+getModel(modelPOP)
+#getList(getModel(modelPOP)$topN)
+
+recs <- predict(modelPOP, aumb, n = 5)
+getList(recs)
+
+```
+
+
+# Context-Aware Recommendation
+
+It is a current active topic of research and in several domains the context can inuence a recommendation. The aim is to propose a contextual approach to generate recommendations by exploring the additional information on the users and restaurants, trying to obtain improvements in the success measures.
+
+##The Approach
+
+We faced in this problem the use of recommendation algorithms which involves suggestions based in contextual data, that considers not just a rating but the background of the person that gave this rating.  
+
+In this case the context is found within the user documentation. Although some attributes may seem to carry little weight, like the color or religion, others features do seem to give a hint to what the user may like. For example, a user that is a smoker would probabilly preffer to go to a restaurant that has a smoking area, or a user with low budget maight search for a less expensive restaurant, and so on. 
+
+As sugested in the article by KUO, Wei-ti et al., there are three types of context-aware recommendations. A pre-filtering, pos-filtering and contex-tual modeling. Using these approachs, it would be possible to create the model and make the predictions after have directioned the dataset that represents our interest, guiding the system to achieve the results that are in the desired context. 
+
+We opted for a pre-filtering approach to compare with the previous results.
+
+###Pre-Filtering Approach
+
+The first thing was to filter the dataset before creating the model. In this case,  the budget of the user and if the person smokes or not, getting just the ratings of the restuarants that are included in this context.  
+
+```{r, echo=FALSE}
+filter_dataset_to_recommend <- function(uID,smoker,budget){
+    
+    if(smoker){
+      smoker = userprofile$smoker[userprofile$userID == uID]  
+      
+      #SMOKER
+      if (smoker == "true"){
+        filtro_smoker = c("only at bar","permitted","section")
+      }else{
+        filtro_smoker = c("only at bar","none","section")
+      }
+      
+      
+    }
+    
+    if(budget){
+      budget = userprofile$budget[userprofile$userID == uID]  
+      
+      #BUDGET
+      if(budget == "low"){
+          filtro_budget = c("low")
+      }else if (budget == "medium"){
+          filtro_budget = c("low","medium")
+      }else if (budget == "high"){
+          filtro_budget = c("medium","high")
+      }
+    }
+    
+    f_geoplaces <- geoplaces2
+   
+    if (budget){
+      f_geoplaces <- f_geoplaces %>% 
+      filter(price %in% filtro_budget)  
+    }
+    
+     if (smoker){
+      f_geoplaces <- f_geoplaces %>% 
+      filter(smoking_area %in% filtro_smoker)
+    }
+    
+    
+    f_ratings <- userRat %>%
+    filter(placeID %in% f_geoplaces$placeID)
+    
+    return(f_ratings)
+         
+    
+}
+
+```
+
+Then, it was tested the recomendations with the sames parameters as before. For example, We can fiter for Budget, for Smokers or for both.
+
+```{r}
+recomendar_para_o_usuario <- "U1001"
+```
+As we can wee, for all of the examples, we got better results comparing to the standard not filtered dataset
+
+```{r, echo=FALSE}
+#creates the column final_rating = rating + food_rating + service_rating
+df <- filter_dataset_to_recommend(recomendar_para_o_usuario,FALSE,TRUE) %>%
+mutate(rating = rating + food_rating + service_rating ) %>%
+select(userID, placeID, rating)
+
+df2 <- filter_dataset_to_recommend(recomendar_para_o_usuario,TRUE,TRUE) %>%
+mutate(rating = rating + food_rating + service_rating ) %>%
+select(userID, placeID, rating)
+
+df3 <- filter_dataset_to_recommend(recomendar_para_o_usuario,TRUE,FALSE) %>%
+mutate(rating = rating + food_rating + service_rating ) %>%
+select(userID, placeID, rating)
+
+mrc <- as(df, "realRatingMatrix")
+mrc2 <- as(df2, "realRatingMatrix")
+mrc3 <- as(df3, "realRatingMatrix")
+
+e <- evaluationScheme(mrc, method="split", train=0.9, k=5, given = -1, goodRating=5)
+e2 <- evaluationScheme(mrc2, method="split", train=0.9, k=5, given = -1, goodRating=5)
+e3 <- evaluationScheme(mrc3, method="split", train=0.9, k=5, given = -1, goodRating=5)
+
+r1 <- Recommender(getData(e, "train"), "UBCF")
+r3 <- Recommender(getData(e, "train"), "POPULAR")
+r2 <- Recommender(getData(e, "train"), "IBCF")
+
+r12 <- Recommender(getData(e2, "train"), "UBCF")
+r32 <- Recommender(getData(e2, "train"), "POPULAR")
+r22 <- Recommender(getData(e2, "train"), "IBCF")
+
+r13 <- Recommender(getData(e3, "train"), "UBCF")
+r33 <- Recommender(getData(e3, "train"), "POPULAR")
+r23 <- Recommender(getData(e3, "train"), "IBCF")
+
+p1 <- predict(r1, getData(e, "known"), type="ratings")
+p2 <- predict(r2, getData(e, "known"), type="ratings")
+p3 <- predict(r3, getData(e, "known"), type="ratings")
+
+
+p12 <- predict(r12, getData(e2, "known"), type="ratings")
+p22 <- predict(r22, getData(e2, "known"), type="ratings")
+p32 <- predict(r32, getData(e2, "known"), type="ratings")
+
+
+
+p13 <- predict(r13, getData(e3, "known"), type="ratings")
+p23 <- predict(r23, getData(e3, "known"), type="ratings")
+p33 <- predict(r33, getData(e3, "known"), type="ratings")
+
+
+
+error <- rbind(UBCF = calcPredictionAccuracy(p1, getData(e, "unknown")),
+               IBCF = calcPredictionAccuracy(p2, getData(e, "unknown")),
+               POPULAR = calcPredictionAccuracy(p3, getData(e, "unknown")))
+
+
+
+error2 <- rbind(UBCF = calcPredictionAccuracy(p12, getData(e2, "unknown")),
+               IBCF = calcPredictionAccuracy(p22, getData(e2, "unknown")),
+               POPULAR = calcPredictionAccuracy(p32, getData(e2, "unknown")))
+
+
+error3 <- rbind(UBCF = calcPredictionAccuracy(p13, getData(e3, "unknown")),
+               IBCF = calcPredictionAccuracy(p23, getData(e3, "unknown")),
+                   POPULAR = calcPredictionAccuracy(p33, getData(e3, "unknown")))
+```
+
+```{r}
+
+error
+error2
+error3
+
+```
+
+
+# Conclusions
+After all the analysis and the development of many recommendation models, it was concluded that...
+
+
+#References
+
+[1] KUO, Wei-ti et al. In: THE 26TH ANNUAL CONFERENCE OF THE JAPANESE SOCIETY FOR ARTIFICIAL INTELLIGENCE, 2012, Taiwan.
+Contextual Restaurant Recommendation Utilizing Implicit Feedback.Avaliable in: http://yenlingkuo.com/pub/jsai2012.pdf
+(http://yenlingkuo.com/pub/jsai2012.pdf). Access: 04 may 2018.
+
+[2] HAHSLER, Michael. Recommenderlab: A Framework for Developing and Testing Recommendation Algorithms. Avaliable in: https://cran.r-
+project.org/web/packages/recommenderlab/vignettes/recommenderlab.pdf (https://cran.r-
+project.org/web/packages/recommenderlab/vignettes/recommenderlab.pdf). Access: 02 may 2018.
+
+[3] RIBEIRO, Rita P. Hands On: Web Usage Mining, 2017. Avaliable in: http://www.dcc.fc.up.pt/~rpribeiro/aulas/DMII_1718/material/DMII-
+1718_HandsOn-2_sol.pdf (http://www.dcc.fc.up.pt/~rpribeiro/aulas/DMII_1718/material/DMII-1718_HandsOn-2_sol.pdf). Access: 30 april 2018.
